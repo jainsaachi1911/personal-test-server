@@ -12,11 +12,10 @@ const PORT = process.env.PORT || 3000;
 const ALLOWED_PUBLIC_IP = process.env.ALLOWED_PUBLIC_IP;
 
 app.use((req, res, next) => {
-    const forwarded = req.headers["x-forwarded-for"];
-    const clientIP = forwarded ? forwarded.split(",")[0].trim() : req.socket.remoteAddress;
+    const auth = req.headers.authorization;
   
-    if (!clientIP || !clientIP.includes(ALLOWED_PUBLIC_IP)) {
-      return res.status(403).send("Access Denied");
+    if (!auth || auth !== `Bearer ${process.env.ACCESS_TOKEN}`) {
+      return res.status(401).send("Unauthorized");
     }
   
     next();
