@@ -1,36 +1,32 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Encrypted File Server</title>
+  <title>Secure Encrypted File Server</title>
 </head>
 <body>
-  <h2>Upload File</h2>
 
-  <input type="file" id="fileInput" />
-  <button onclick="uploadFile()">Upload</button>
+<h2>Upload File</h2>
+<input type="file" id="fileInput" />
+<button onclick="uploadFile()">Upload</button>
 
-  <h2>Files</h2>
-  <button onclick="loadFiles()">Refresh</button>
-  <ul id="fileList"></ul>
+<h2>Files</h2>
+<button onclick="loadFiles()">Refresh</button>
+<ul id="fileList"></ul>
 
 <script>
 const params = new URLSearchParams(window.location.search);
 const token = params.get("token");
 
-// 🔐 Ask for encryption password
-let PASSWORD = null;
+// 🔐 Hardcoded password (browser only)
+const PASSWORD = "UltraSecurePassword123!";
 
-while (!PASSWORD) {
-  PASSWORD = prompt("Enter encryption password:");
-  if (!PASSWORD) alert("Password is required!");
-}
-
-// Derive AES-GCM key from password
-async function getKey() {
+// 🔐 Derive AES key from password + salt
+async function deriveKey(password, salt) {
   const enc = new TextEncoder();
+
   const keyMaterial = await crypto.subtle.importKey(
     "raw",
-    enc.encode(PASSWORD),
+    enc.encode(password),
     "PBKDF2",
     false,
     ["deriveKey"]
@@ -39,8 +35,8 @@ async function getKey() {
   return crypto.subtle.deriveKey(
     {
       name: "PBKDF2",
-      salt: enc.encode("static-salt"),
-      iterations: 100000,
+      salt: salt,
+      iterations: 150000,
       hash: "SHA-256"
     },
     keyMaterial,
@@ -50,14 +46,17 @@ async function getKey() {
   );
 }
 
-// Encrypt before upload
+// 🔐 Encrypt before upload
 async function uploadFile() {
   const file = document.getElementById("fileInput").files[0];
   if (!file) return;
 
-  const key = await getKey();
-  const iv = crypto.getRandomValues(new Uint8Array(12));
   const data = await file.arrayBuffer();
+
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+
+  const key = await deriveKey(PASSWORD, salt);
 
   const encrypted = await crypto.subtle.encrypt(
     { name: "AES-GCM", iv: iv },
@@ -65,9 +64,14 @@ async function uploadFile() {
     data
   );
 
-  const combined = new Uint8Array(iv.length + encrypted.byteLength);
-  combined.set(iv, 0);
-  combined.set(new Uint8Array(encrypted), iv.length);
+  // File format: [salt][iv][encrypted]
+  const combined = new Uint8Array(
+    salt.length + iv.length + encrypted.byteLength
+  );
+
+  combined.set(salt, 0);
+  combined.set(iv, 16);
+  combined.set(new Uint8Array(encrypted), 28);
 
   const blob = new Blob([combined]);
 
@@ -79,40 +83,26 @@ async function uploadFile() {
     body: formData
   });
 
-  alert("Encrypted file uploaded!");
+  alert("Encrypted file uploaded successfully!");
   loadFiles();
 }
 
-// Load encrypted file list
-async function loadFiles() {
-  const res = await fetch("/files?token=" + token);
-  const files = await res.json();
-
-  const list = document.getElementById("fileList");
-  list.innerHTML = "";
-
-  files.forEach(file => {
-    const li = document.createElement("li");
-    li.innerHTML = `<button onclick="downloadFile('${file}')">${file}</button>`;
-    list.appendChild(li);
-  });
-}
-
-// Decrypt after download
+// 🔓 Decrypt after download
 async function downloadFile(filename) {
   const res = await fetch("/download/" + filename + "?token=" + token);
-  const encryptedData = await res.arrayBuffer();
+  const encryptedData = new Uint8Array(await res.arrayBuffer());
 
-  const key = await getKey();
+  const salt = encryptedData.slice(0, 16);
+  const iv = encryptedData.slice(16, 28);
+  const ciphertext = encryptedData.slice(28);
 
-  const iv = encryptedData.slice(0, 12);
-  const data = encryptedData.slice(12);
+  const key = await deriveKey(PASSWORD, salt);
 
   try {
     const decrypted = await crypto.subtle.decrypt(
       { name: "AES-GCM", iv: iv },
       key,
-      data
+      ciphertext
     );
 
     const blob = new Blob([decrypted]);
@@ -124,11 +114,28 @@ async function downloadFile(filename) {
     a.click();
 
   } catch (err) {
-    alert("Wrong password or corrupted file!");
+    alert("Decryption failed! Wrong password or corrupted file.");
   }
+}
+
+// 🔄 Load files
+async function loadFiles() {
+  const res = await fetch("/files?token=" + token);
+  const files = await res.json();
+
+  const list = document.getElementById("fileList");
+  list.innerHTML = "";
+
+  files.forEach(file => {
+    const li = document.createElement("li");
+    li.innerHTML =
+      `<button onclick="downloadFile('${file}')">${file}</button>`;
+    list.appendChild(li);
+  });
 }
 
 loadFiles();
 </script>
+
 </body>
 </html>
