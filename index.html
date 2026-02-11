@@ -1,42 +1,134 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Personal File Server</title>
+  <title>Encrypted File Server</title>
 </head>
 <body>
   <h2>Upload File</h2>
 
-  <form id="uploadForm" method="post" enctype="multipart/form-data">
-    <input type="file" name="file" required />
-    <button type="submit">Upload</button>
-  </form>
+  <input type="file" id="fileInput" />
+  <button onclick="uploadFile()">Upload</button>
 
-  <h2>Available Files</h2>
+  <h2>Files</h2>
   <button onclick="loadFiles()">Refresh</button>
   <ul id="fileList"></ul>
 
-  <script>
-    const params = new URLSearchParams(window.location.search);
-    const token = params.get("token");
+<script>
+const params = new URLSearchParams(window.location.search);
+const token = params.get("token");
 
-    // Attach token to upload form
-    document.getElementById("uploadForm").action = "/upload?token=" + token;
+// 🔐 Ask for encryption password
+let PASSWORD = null;
 
-    async function loadFiles() {
-      const res = await fetch("/files?token=" + token);
-      const files = await res.json();
+while (!PASSWORD) {
+  PASSWORD = prompt("Enter encryption password:");
+  if (!PASSWORD) alert("Password is required!");
+}
 
-      const list = document.getElementById("fileList");
-      list.innerHTML = "";
+// Derive AES-GCM key from password
+async function getKey() {
+  const enc = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(PASSWORD),
+    "PBKDF2",
+    false,
+    ["deriveKey"]
+  );
 
-      files.forEach(file => {
-        const li = document.createElement("li");
-        li.innerHTML = `<a href="/download/${file}?token=${token}">${file}</a>`;
-        list.appendChild(li);
-      });
-    }
+  return crypto.subtle.deriveKey(
+    {
+      name: "PBKDF2",
+      salt: enc.encode("static-salt"),
+      iterations: 100000,
+      hash: "SHA-256"
+    },
+    keyMaterial,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"]
+  );
+}
 
-    loadFiles();
-  </script>
+// Encrypt before upload
+async function uploadFile() {
+  const file = document.getElementById("fileInput").files[0];
+  if (!file) return;
+
+  const key = await getKey();
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const data = await file.arrayBuffer();
+
+  const encrypted = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv: iv },
+    key,
+    data
+  );
+
+  const combined = new Uint8Array(iv.length + encrypted.byteLength);
+  combined.set(iv, 0);
+  combined.set(new Uint8Array(encrypted), iv.length);
+
+  const blob = new Blob([combined]);
+
+  const formData = new FormData();
+  formData.append("file", blob, file.name + ".enc");
+
+  await fetch("/upload?token=" + token, {
+    method: "POST",
+    body: formData
+  });
+
+  alert("Encrypted file uploaded!");
+  loadFiles();
+}
+
+// Load encrypted file list
+async function loadFiles() {
+  const res = await fetch("/files?token=" + token);
+  const files = await res.json();
+
+  const list = document.getElementById("fileList");
+  list.innerHTML = "";
+
+  files.forEach(file => {
+    const li = document.createElement("li");
+    li.innerHTML = `<button onclick="downloadFile('${file}')">${file}</button>`;
+    list.appendChild(li);
+  });
+}
+
+// Decrypt after download
+async function downloadFile(filename) {
+  const res = await fetch("/download/" + filename + "?token=" + token);
+  const encryptedData = await res.arrayBuffer();
+
+  const key = await getKey();
+
+  const iv = encryptedData.slice(0, 12);
+  const data = encryptedData.slice(12);
+
+  try {
+    const decrypted = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: iv },
+      key,
+      data
+    );
+
+    const blob = new Blob([decrypted]);
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename.replace(".enc", "");
+    a.click();
+
+  } catch (err) {
+    alert("Wrong password or corrupted file!");
+  }
+}
+
+loadFiles();
+</script>
 </body>
 </html>
