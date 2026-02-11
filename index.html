@@ -105,13 +105,27 @@ async function downloadFile(filename) {
       ciphertext
     );
 
-    const blob = new Blob([decrypted]);
+    // Convert to Uint8Array
+    const decryptedBytes = new Uint8Array(decrypted);
+
+    // Restore original filename
+    const originalName = filename.endsWith(".enc")
+      ? filename.slice(0, -4)
+      : filename;
+
+    // Create blob with generic binary type
+    const blob = new Blob([decryptedBytes], {
+      type: "application/octet-stream"
+    });
+
     const url = URL.createObjectURL(blob);
 
     const a = document.createElement("a");
     a.href = url;
-    a.download = filename.replace(".enc", "");
+    a.download = originalName;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
 
   } catch (err) {
     alert("Decryption failed! Wrong password or corrupted file.");
