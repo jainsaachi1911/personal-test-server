@@ -8,13 +8,10 @@ const upload = multer({ dest: "uploads/" });
 
 const PORT = process.env.PORT || 3000;
 
-// 🔒 Replace this with your public IP
-const ALLOWED_PUBLIC_IP = process.env.ALLOWED_PUBLIC_IP;
-
 app.use((req, res, next) => {
-    const auth = req.headers.authorization;
+    const token = req.query.token;
   
-    if (!auth || auth !== `Bearer ${process.env.ACCESS_TOKEN}`) {
+    if (token !== process.env.ACCESS_TOKEN) {
       return res.status(401).send("Unauthorized");
     }
   
