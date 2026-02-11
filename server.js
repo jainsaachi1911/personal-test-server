@@ -8,15 +8,21 @@ const upload = multer({ dest: "uploads/" });
 
 const PORT = process.env.PORT || 3000;
 
+// Create uploads folder if it doesn't exist
+if (!fs.existsSync("uploads")) {
+  fs.mkdirSync("uploads");
+}
+
+// 🔐 Token middleware
 app.use((req, res, next) => {
-    const token = req.query.token;
-  
-    if (token !== process.env.ACCESS_TOKEN) {
-      return res.status(401).send("Unauthorized");
-    }
-  
-    next();
-  });
+  const token = req.query.token;
+
+  if (!token || token !== process.env.ACCESS_TOKEN) {
+    return res.status(401).send("Unauthorized");
+  }
+
+  next();
+});
 
 // Homepage
 app.get("/", (req, res) => {
@@ -25,13 +31,16 @@ app.get("/", (req, res) => {
 
 // Upload route
 app.post("/upload", upload.single("file"), (req, res) => {
-  res.send("File uploaded successfully!");
+  res.send(`
+    <h3>File uploaded successfully!</h3>
+    <a href="/?token=${req.query.token}">Go Back</a>
+  `);
 });
 
 // List files
 app.get("/files", (req, res) => {
   fs.readdir("./uploads", (err, files) => {
-    if (err) return res.send([]);
+    if (err) return res.json([]);
     res.json(files);
   });
 });
@@ -39,6 +48,11 @@ app.get("/files", (req, res) => {
 // Download file
 app.get("/download/:name", (req, res) => {
   const filePath = path.join(__dirname, "uploads", req.params.name);
+
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).send("File not found");
+  }
+
   res.download(filePath);
 });
 

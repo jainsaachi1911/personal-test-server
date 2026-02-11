@@ -1,11 +1,12 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Personal File Transfer</title>
+  <title>Personal File Server</title>
 </head>
 <body>
   <h2>Upload File</h2>
-  <form action="/upload" method="post" enctype="multipart/form-data">
+
+  <form id="uploadForm" method="post" enctype="multipart/form-data">
     <input type="file" name="file" required />
     <button type="submit">Upload</button>
   </form>
@@ -15,18 +16,27 @@
   <ul id="fileList"></ul>
 
   <script>
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("token");
+
+    // Attach token to upload form
+    document.getElementById("uploadForm").action = "/upload?token=" + token;
+
     async function loadFiles() {
-      const res = await fetch("/files");
+      const res = await fetch("/files?token=" + token);
       const files = await res.json();
+
       const list = document.getElementById("fileList");
       list.innerHTML = "";
 
       files.forEach(file => {
         const li = document.createElement("li");
-        li.innerHTML = `<a href="/download/${file}">${file}</a>`;
+        li.innerHTML = `<a href="/download/${file}?token=${token}">${file}</a>`;
         list.appendChild(li);
       });
     }
+
+    loadFiles();
   </script>
 </body>
 </html>
