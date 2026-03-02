@@ -17,119 +17,36 @@
 const params = new URLSearchParams(window.location.search);
 const token = params.get("token");
 
-// 🔐 Hardcoded password (browser only)
-const PASSWORD = "UltraSecurePassword123!";
-
-// 🔐 Derive AES key from password + salt
-async function deriveKey(password, salt) {
-  const enc = new TextEncoder();
-
-  const keyMaterial = await crypto.subtle.importKey(
-    "raw",
-    enc.encode(password),
-    "PBKDF2",
-    false,
-    ["deriveKey"]
-  );
-
-  return crypto.subtle.deriveKey(
-    {
-      name: "PBKDF2",
-      salt: salt,
-      iterations: 150000,
-      hash: "SHA-256"
-    },
-    keyMaterial,
-    { name: "AES-GCM", length: 256 },
-    false,
-    ["encrypt", "decrypt"]
-  );
-}
-
-// 🔐 Encrypt before upload
+// Upload file
 async function uploadFile() {
   const file = document.getElementById("fileInput").files[0];
   if (!file) return;
 
-  const data = await file.arrayBuffer();
-
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-
-  const key = await deriveKey(PASSWORD, salt);
-
-  const encrypted = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv: iv },
-    key,
-    data
-  );
-
-  // File format: [salt][iv][encrypted]
-  const combined = new Uint8Array(
-    salt.length + iv.length + encrypted.byteLength
-  );
-
-  combined.set(salt, 0);
-  combined.set(iv, 16);
-  combined.set(new Uint8Array(encrypted), 28);
-
-  const blob = new Blob([combined]);
-
   const formData = new FormData();
-  formData.append("file", blob, file.name + ".enc");
+  formData.append("file", file);
 
   await fetch("/upload?token=" + token, {
     method: "POST",
     body: formData
   });
 
-  alert("Encrypted file uploaded successfully!");
+  alert("File uploaded successfully!");
   loadFiles();
 }
 
-// 🔓 Decrypt after download
+// Download file
 async function downloadFile(filename) {
   const res = await fetch("/download/" + filename + "?token=" + token);
-  const encryptedData = new Uint8Array(await res.arrayBuffer());
+  const blob = await res.blob();
 
-  const salt = encryptedData.slice(0, 16);
-  const iv = encryptedData.slice(16, 28);
-  const ciphertext = encryptedData.slice(28);
+  const url = URL.createObjectURL(blob);
 
-  const key = await deriveKey(PASSWORD, salt);
-
-  try {
-    const decrypted = await crypto.subtle.decrypt(
-      { name: "AES-GCM", iv: iv },
-      key,
-      ciphertext
-    );
-
-    // Convert to Uint8Array
-    const decryptedBytes = new Uint8Array(decrypted);
-
-    // Restore original filename
-    const originalName = filename.endsWith(".enc")
-      ? filename.slice(0, -4)
-      : filename;
-
-    // Create blob with generic binary type
-    const blob = new Blob([decryptedBytes], {
-      type: "application/octet-stream"
-    });
-
-    const url = URL.createObjectURL(blob);
-
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = originalName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-
-  } catch (err) {
-    alert("Decryption failed! Wrong password or corrupted file.");
-  }
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }
 
 // 🔄 Load files

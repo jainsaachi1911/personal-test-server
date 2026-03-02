@@ -12,7 +12,7 @@ if (!fs.existsSync("uploads")) {
   fs.mkdirSync("uploads");
 }
 
-// 🔐 Token middleware
+// Token middleware
 app.use((req, res, next) => {
   const token = req.query.token;
 
@@ -28,10 +28,10 @@ app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "index.html"));
 });
 
-// Upload encrypted file (server does NOT decrypt)
+// Upload file
 app.post("/upload", upload.single("file"), (req, res) => {
   res.send(`
-    <h3>Encrypted file uploaded successfully!</h3>
+    <h3>File uploaded successfully!</h3>
     <a href="/?token=${req.query.token}">Go Back</a>
   `);
 });
@@ -44,7 +44,7 @@ app.get("/files", (req, res) => {
   });
 });
 
-// Download encrypted file (browser decrypts)
+// Download file
 app.get("/download/:name", (req, res) => {
   const filePath = path.join(__dirname, "uploads", req.params.name);
 
